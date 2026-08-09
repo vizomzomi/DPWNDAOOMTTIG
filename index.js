@@ -63,7 +63,7 @@ function guessFilename(type, titleHint) {
 // and gives the file a real name (from the video title / caption) instead of a generic one.
 function buildProxyUrl(req, originalUrl, type, titleHint) {
   if (!originalUrl) return null;
-  const base = `${req.protocol}://${req.get("host")}`;
+  const base = `https://${req.get("host")}`;
   const token = toBase64Url(originalUrl);
   const params = new URLSearchParams({ u: token, n: guessFilename(type, titleHint) });
   return `${base}/api/dl?${params.toString()}`;
