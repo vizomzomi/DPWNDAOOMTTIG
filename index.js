@@ -56,33 +56,44 @@ async function tiktokio(url) {
 }
 
 async function downloadInstagram(url) {
-  const form = new URLSearchParams();
-  form.append("q", url);
-  form.append("vt", "home");
-
-  const { data } = await axios.post("https://yt5s.io/api/ajaxSearch", form, {
-    headers: {
-      "Accept": "application/json, text/javascript, */*; q=0.01",
-      "X-Requested-With": "XMLHttpRequest",
-      "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-      "Origin": "https://yt5s.io",
-      "Referer": "https://yt5s.io/en29/instagram-downloader"
+  const { data } = await axios.post(
+    "https://cobalt.tools/api/json",
+    {
+      url: url,
+      videoQuality: "max"
     },
-  });
+    {
+      headers: {
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+      }
+    }
+  );
 
-  if (data.status !== "ok" || !data.data) {
-    throw new Error("Gagal mengambil data Instagram atau IP Vercel diblokir.");
+  if (data.status === "error") {
+    throw new Error(data.text || "Gagal mengunduh media Instagram.");
   }
 
-  const $ = cheerio.load(data.data);
-  const video = $('a[title="Download Video"]').attr("href");
-  const image = $("img").attr("src");
+  if (data.status === "picker") {
+    return {
+      status: true,
+      result: {
+        type: "carousel",
+        urls: data.picker.map(item => item.url)
+      }
+    };
+  }
 
-  if (video) {
-    return { status: true, result: { type: "video", url: video } };
-  } else if (image) {
-    return { status: true, result: { type: "image", url: image } };
+  if (data.url) {
+    const isVideo = data.url.includes(".mp4") || data.status === "stream";
+    return {
+      status: true,
+      result: {
+        type: isVideo ? "video" : "image",
+        url: data.url
+      }
+    };
   }
 
   throw new Error("Media Instagram tidak ditemukan.");
