@@ -299,7 +299,13 @@ async function tiktokio(url) {
   const links = {};
   $(".download-links a").each((i, el) => {
     const text = $(el).text().toLowerCase();
-    const href = $(el).attr("href");
+    let href = $(el).attr("href");
+    
+    // Hapus corsproxy jika ada di dalam URL
+    if (href && href.includes("corsproxy.io/?")) {
+      href = decodeURIComponent(href.split("corsproxy.io/?")[1] || href);
+    }
+
     if (text.includes("without watermark") && !text.includes("hd")) links.nowm = href;
     else if (text.includes("hd")) links.nowm_hd = href;
     else if (text.includes("mp3")) links.mp3 = href;
