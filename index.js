@@ -4,7 +4,6 @@ const cheerio = require("cheerio");
 
 const app = express();
 app.use(express.json());
-app.set("json spaces", 2);
 
 async function tiktokio(url) {
   const res = await axios.post(
@@ -85,41 +84,25 @@ async function downloadInstagram(url) {
 
 app.get("/api/tiktok", async (req, res) => {
   const { url } = req.query;
-  if (!url) {
-    return res.status(400).setHeader("Content-Type", "application/json").send(
-      JSON.stringify({ status: false, message: "Parameter 'url' wajib diisi." }, null, 2)
-    );
-  }
+  if (!url) return res.status(400).json({ status: false, message: "Parameter 'url' wajib diisi." });
 
   try {
     const data = await tiktokio(url);
-    return res.setHeader("Content-Type", "application/json").send(
-      JSON.stringify(data, null, 2)
-    );
+    return res.json(data);
   } catch (error) {
-    return res.status(500).setHeader("Content-Type", "application/json").send(
-      JSON.stringify({ status: false, message: "Gagal memproses TikTok.", error: error.message }, null, 2)
-    );
+    return res.status(500).json({ status: false, message: "Gagal memproses TikTok.", error: error.message });
   }
 });
 
 app.get("/api/instagram", async (req, res) => {
   const { url } = req.query;
-  if (!url) {
-    return res.status(400).setHeader("Content-Type", "application/json").send(
-      JSON.stringify({ status: false, message: "Parameter 'url' wajib diisi." }, null, 2)
-    );
-  }
+  if (!url) return res.status(400).json({ status: false, message: "Parameter 'url' wajib diisi." });
 
   try {
     const data = await downloadInstagram(url);
-    return res.setHeader("Content-Type", "application/json").send(
-      JSON.stringify(data, null, 2)
-    );
+    return res.json(data);
   } catch (error) {
-    return res.status(500).setHeader("Content-Type", "application/json").send(
-      JSON.stringify({ status: false, message: "Gagal memproses Instagram.", error: error.message }, null, 2)
-    );
+    return res.status(500).json({ status: false, message: "Gagal memproses Instagram.", error: error.message });
   }
 });
 
