@@ -1,27 +1,10 @@
 const express = require("express");
 const axios = require("axios");
 const cheerio = require("cheerio");
-const crypto = require("crypto");
 
 const app = express();
 app.use(express.json());
 app.set("json spaces", 2);
-
-// Database sementara di memori server untuk menyimpan URL asli secara rahasia
-const urlStore = new Map();
-
-// Hapus otomatis URL dari memori setelah 10 menit agar server tidak penuh
-function storeSecretUrl(rawUrl) {
-  if (!rawUrl) return null;
-  const id = crypto.randomBytes(6).toString("hex");
-  urlStore.set(id, rawUrl);
-  
-  setTimeout(() => {
-    urlStore.delete(id);
-  }, 10 * 60 * 1000);
-
-  return id;
-}
 
 const PATH_REGEX = /instagram\.com\/(p|reel|reels)\/([a-zA-Z0-9_-]+)/;
 
@@ -111,7 +94,6 @@ function buildVideoResult(raw) {
   const captionObj = raw.caption || {};
   const caption = captionObj.text || raw.accessibility_caption || "";
   const bestVideo = versions[0]?.url || raw.video_url || "";
-  const secretId = storeSecretUrl(bestVideo);
 
   return {
     status: true,
@@ -119,7 +101,7 @@ function buildVideoResult(raw) {
       type: "video",
       caption,
       username: user.username || "N/A",
-      url: secretId ? `/api/danz/file/${secretId}.mp4` : null,
+      url: bestVideo,
     },
   };
 }
@@ -133,16 +115,13 @@ function buildSlidesResult(raw) {
   if (!items.length) {
     const bestImg = raw.image_versions2?.candidates?.[0]?.url || raw.display_uri || "";
     const bestVid = raw.video_versions?.[0]?.url || "";
-    const isVid = !!bestVid;
-    const secretId = storeSecretUrl(isVid ? bestVid : bestImg);
-
     return {
       status: true,
       result: {
-        type: isVid ? "video" : "image",
+        type: bestVid ? "video" : "image",
         caption,
         username: user.username || "N/A",
-        url: secretId ? `/api/danz/file/${secretId}.${isVid ? "mp4" : "jpg"}` : null,
+        url: bestVid || bestImg,
       },
     };
   }
@@ -150,16 +129,14 @@ function buildSlidesResult(raw) {
   const firstItem = items[0];
   const bestVid = firstItem.video_versions?.[0]?.url;
   const bestImg = firstItem.image_versions2?.candidates?.[0]?.url || firstItem.display_uri;
-  const isVid = !!bestVid;
-  const secretId = storeSecretUrl(isVid ? bestVid : bestImg);
 
   return {
     status: true,
     result: {
-      type: isVid ? "video" : "image",
+      type: bestVid ? "video" : "image",
       caption,
       username: user.username || "N/A",
-      url: secretId ? `/api/danz/file/${secretId}.${isVid ? "mp4" : "jpg"}` : null,
+      url: bestVid || bestImg,
     },
   };
 }
@@ -239,15 +216,13 @@ const instagram = {
       const data = extractEmbedData(html);
       if (!data) throw new Error("Data video tidak ditemukan.");
       if (!data.url) throw new Error("Post ini tidak memiliki media.");
-      
-      const secretId = storeSecretUrl(data.url);
       return {
         status: true,
         result: {
           type: data.isVideo ? "video" : "image",
           caption: data.caption,
           username: data.username,
-          url: secretId ? `/api/danz/file/${secretId}.${data.isVideo ? "mp4" : "jpg"}` : null,
+          url: data.url,
         },
       };
     } catch (error) {
@@ -279,15 +254,13 @@ const instagram = {
           data = extractMetaData(html);
         }
         if (!data) throw new Error("Data slide tidak ditemukan.");
-        
-        const secretId = storeSecretUrl(data.url);
         return {
           status: true,
           result: {
             type: "image",
             caption: data.caption,
             username: data.username,
-            url: secretId ? `/api/danz/file/${secretId}.jpg` : null,
+            url: data.url,
           },
         };
       }
@@ -314,92 +287,38 @@ async function tiktokio(url) {
   );
 
   const $ = cheerio.load(res.data);
-
-  let title = $(".video-info h3").first().text().trim() ||
-              $(".video-data h3").first().text().trim() ||
-              $(".video-info .title").first().text().trim() ||
-              $(".video-info p").first().text().trim() ||
-              "TikTok Media";
-
+  const title = $(".video-info h3").first().text().trim();
   const cover = $(".video-info img").first().attr("src") || null;
-
-  const cleanUrl = (rawUrl) => {
-    if (!rawUrl) return null;
-    if (rawUrl.includes("corsproxy.io/?")) {
-      const split = rawUrl.split("corsproxy.io/?");
-      return decodeURIComponent(split[1] || split[0]);
-    }
-    return rawUrl;
-  };
 
   const images = [];
   $(".image-item").each((i, el) => {
-    const link = cleanUrl($(el).find("a").attr("href"));
-    if (link) {
-      const secretId = storeSecretUrl(link);
-      images.push(`/api/danz/file/${secretId}.jpg`);
-    }
+    const link = $(el).find("a").attr("href");
+    if (link) images.push(link);
   });
 
   const links = {};
   $(".download-links a").each((i, el) => {
     const text = $(el).text().toLowerCase();
-    const href = cleanUrl($(el).attr("href"));
-
+    const href = $(el).attr("href");
     if (text.includes("without watermark") && !text.includes("hd")) links.nowm = href;
     else if (text.includes("hd")) links.nowm_hd = href;
-    else if (text.includes("mp3") || text.includes("audio")) links.mp3 = href;
+    else if (text.includes("mp3")) links.mp3 = href;
   });
 
   const isImage = images.length > 0;
-  const rawVideoUrl = links.nowm_hd || links.nowm || null;
-
-  const videoSecretId = storeSecretUrl(rawVideoUrl);
-  const audioSecretId = storeSecretUrl(links.mp3);
 
   return {
     status: true,
     result: {
       title,
       type: isImage ? "image" : "video",
-      cover: cleanUrl(cover),
-      url: isImage ? null : (videoSecretId ? `/api/danz/file/${videoSecretId}.mp4` : null),
+      cover,
+      url: isImage ? null : (links.nowm_hd || links.nowm || null),
       images: isImage ? images : null,
-      audio: audioSecretId ? `/api/danz/file/${audioSecretId}.mp3` : null,
+      audio: links.mp3 || null,
     },
   };
 }
-
-// ENDPOINT DOWNLOAD BERDASARKAN ID RAHASIA (Link Murni Custom Danz)
-app.get("/api/danz/file/:fileId", async (req, res) => {
-  const fullFileId = req.params.fileId;
-  const secretId = fullFileId.split(".")[0];
-  const extension = fullFileId.split(".")[1] || "mp4";
-
-  const targetUrl = urlStore.get(secretId);
-
-  if (!targetUrl) {
-    return res.status(404).send("File tidak ditemukan atau link sudah kedaluwarsa.");
-  }
-
-  try {
-    const response = await axios({
-      method: "get",
-      url: targetUrl,
-      responseType: "stream",
-      headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-      },
-    });
-
-    res.setHeader("Content-Disposition", `attachment; filename="danz_media.${extension}"`);
-    res.setHeader("Content-Type", response.headers["content-type"] || "application/octet-stream");
-
-    response.data.pipe(res);
-  } catch (error) {
-    res.status(500).send("Gagal mengambil file media.");
-  }
-});
 
 app.get("/api/tiktok", async (req, res) => {
   const { url } = req.query;
