@@ -36,11 +36,18 @@ function extFor(type) {
   return map[type] || "bin";
 }
 
+function randomCode(len = 6) {
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+  let out = "";
+  for (let i = 0; i < len; i++) out += chars[Math.floor(Math.random() * chars.length)];
+  return out;
+}
+
 function guessFilename(type, titleHint) {
   const ext = extFor(type);
   const clean = sanitizeFilename(titleHint);
   const base = clean ? `danzclean_${clean}` : `danzclean_${type || "file"}`;
-  return `${base}.${ext}`;
+  return `${base}_${randomCode()}.${ext}`;
 }
 
 // Wraps a real media URL into our own /api/dl link so the user never sees the original host,
