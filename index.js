@@ -292,7 +292,10 @@ async function tiktokio(url) {
 
   const images = [];
   $(".image-item").each((i, el) => {
-    const link = $(el).find("a").attr("href");
+    let link = $(el).find("a").attr("href");
+    if (link && link.includes("corsproxy.io/?")) {
+      link = decodeURIComponent(link.split("corsproxy.io/?")[1] || link);
+    }
     if (link) images.push(link);
   });
 
@@ -301,7 +304,7 @@ async function tiktokio(url) {
     const text = $(el).text().toLowerCase();
     let href = $(el).attr("href");
     
-    // Hapus corsproxy jika ada di dalam URL
+    // Hapus proxy corsproxy.io jika menempel pada URL
     if (href && href.includes("corsproxy.io/?")) {
       href = decodeURIComponent(href.split("corsproxy.io/?")[1] || href);
     }
@@ -325,6 +328,35 @@ async function tiktokio(url) {
     },
   };
 }
+
+// ENDPOINT BARU: Download Proxy langsung dari Server Vercel
+app.get("/api/download", async (req, res) => {
+  const { url, filename } = req.query;
+  if (!url) {
+    return res.status(400).send("Parameter URL wajib diisi.");
+  }
+
+  try {
+    const response = await axios({
+      method: "get",
+      url: url,
+      responseType: "stream",
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      },
+    });
+
+    const downloadName = filename || "file_download";
+
+    res.setHeader("Content-Disposition", `attachment; filename="${downloadName}"`);
+    res.setHeader("Content-Type", response.headers["content-type"] || "application/octet-stream");
+
+    response.data.pipe(res);
+  } catch (error) {
+    console.error("Gagal mendownload media:", error.message);
+    res.status(500).send("Gagal mengunduh file media.");
+  }
+});
 
 app.get("/api/tiktok", async (req, res) => {
   const { url } = req.query;
