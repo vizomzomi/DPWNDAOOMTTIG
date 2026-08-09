@@ -56,53 +56,39 @@ async function tiktokio(url) {
 }
 
 async function downloadInstagram(url) {
-  const form = new URLSearchParams();
-  form.append("q", url);
-  form.append("vt", "home");
-
-  const { data } = await axios.post("https://snapinsta.app/action2.php", form, {
-    headers: {
-      "accept": "*/*",
-      "content-type": "application/x-www-form-urlencoded; charset=UTF-8",
-      "origin": "https://snapinsta.app",
-      "referer": "https://snapinsta.app/",
-      "user-agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Mobile Safari/537.36",
-      "x-requested-with": "XMLHttpRequest"
-    }
-  });
-
-  if (!data) throw new Error("Gagal mengambil respon dari Instagram.");
-
-  const htmlContent = typeof data === "string" ? data : (data.data || "");
-  if (!htmlContent) throw new Error("Format respon Instagram tidak valid.");
-
-  const $ = cheerio.load(htmlContent);
-  const mediaList = [];
-
-  $("a.download-items__btn").each((i, el) => {
-    const link = $(el).attr("href");
-    if (link) mediaList.push(link);
-  });
-
-  if (!mediaList.length) {
-    $("a").each((i, el) => {
-      const href = $(el).attr("href");
-      if (href && (href.includes("dl.snapcdn.app") || href.includes("instagram"))) {
-        mediaList.push(href);
+  const { data } = await axios.post(
+    "https://worker.sf-tools.com/savefrom.php",
+    new URLSearchParams({ sf_url: url, sf_submit: "", new: "2", lang: "id", app: "", country: "id", os: "Android", browser: "Chrome" }),
+    {
+      headers: {
+        "content-type": "application/x-www-form-urlencoded",
+        "origin": "https://id.savefrom.net",
+        "referer": "https://id.savefrom.net/",
+        "user-agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Mobile Safari/537.36"
       }
-    });
-  }
+    }
+  );
 
-  if (!mediaList.length) throw new Error("Media Instagram tidak ditemukan.");
+  const jsonString = typeof data === "string" ? data : JSON.stringify(data);
+  const match = jsonString.match(/sd\.show\((.*?)\);/s);
 
-  const isVideo = mediaList[0].includes("video") || mediaList[0].includes(".mp4");
+  if (!match) throw new Error("Gagal mengekstrak data dari Instagram.");
+
+  const parseData = JSON.parse(match[1]);
+  if (!parseData || !parseData.url) throw new Error("Media Instagram tidak ditemukan.");
+
+  const mediaUrl = parseData.url[0]?.url;
+  if (!mediaUrl) throw new Error("URL media tidak valid.");
+
+  const isVideo = parseData.meta?.duration || mediaUrl.includes(".mp4");
 
   return {
     status: true,
     result: {
+      title: parseData.meta?.title || "Instagram Media",
       type: isVideo ? "video" : "image",
-      url: mediaList[0],
-      all_media: mediaList
+      url: mediaUrl,
+      thumbnail: parseData.thumb || null
     }
   };
 }
