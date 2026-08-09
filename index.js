@@ -33,15 +33,10 @@ function extractEmbedData(html) {
   const user = item.owner || {};
   const caption = item.edge_media_to_caption?.edges?.[0]?.node?.text || item.caption || "";
   return {
-    metadata: {
-      code: item.shortcode || "",
-      caption,
-      isVideo: !!item.is_video,
-    },
-    author: {
-      username: user.username || "N/A",
-    },
+    caption,
+    username: user.username || "N/A",
     url: item.video_url || item.display_url || "",
+    isVideo: !!item.is_video,
   };
 }
 
@@ -86,17 +81,14 @@ function extractMetaData(html) {
     caption = desc.replace(prefix, "").trim();
   }
   return {
-    metadata: {
-      code: getMeta("og:url").match(/\/([a-zA-Z0-9_-]+)\/?$/)?.[1] || "",
-      caption,
-      isVideo: false,
-    },
-    author: { username },
+    caption,
+    username,
     url: imageUrl,
+    isVideo: false,
   };
 }
 
-function buildVideoResult(raw, shortcode) {
+function buildVideoResult(raw) {
   const versions = raw.video_versions || [];
   const user = raw.user || {};
   const captionObj = raw.caption || {};
@@ -110,7 +102,6 @@ function buildVideoResult(raw, shortcode) {
       caption,
       username: user.username || "N/A",
       url: bestVideo,
-      thumbnail: raw.display_url || raw.display_uri || "",
     },
   };
 }
@@ -135,20 +126,17 @@ function buildSlidesResult(raw) {
     };
   }
 
-  const mediaUrls = items.map(item => {
-    const bestVid = item.video_versions?.[0]?.url;
-    const bestImg = item.image_versions2?.candidates?.[0]?.url || item.display_uri;
-    return bestVid || bestImg;
-  }).filter(Boolean);
+  const firstItem = items[0];
+  const bestVid = firstItem.video_versions?.[0]?.url;
+  const bestImg = firstItem.image_versions2?.candidates?.[0]?.url || firstItem.display_uri;
 
   return {
     status: true,
     result: {
-      type: "carousel",
+      type: bestVid ? "video" : "image",
       caption,
       username: user.username || "N/A",
-      media_count: mediaUrls.length,
-      urls: mediaUrls,
+      url: bestVid || bestImg,
     },
   };
 }
@@ -220,20 +208,20 @@ const instagram = {
         raw = extractSlideData(html);
       }
       if (raw) {
-        const vidData = buildVideoResult(raw, shortcode);
+        const vidData = buildVideoResult(raw);
         if (vidData.result.url) return vidData;
       }
       const embedRes = await jar.fetch(`https://www.instagram.com/${path}/${shortcode}/embed/captioned/`, { ua });
       html = await embedRes.text();
       const data = extractEmbedData(html);
       if (!data) throw new Error("Data video tidak ditemukan.");
-      if (!data.url) throw new Error("Post ini tidak memiliki media video.");
+      if (!data.url) throw new Error("Post ini tidak memiliki media.");
       return {
         status: true,
         result: {
-          type: data.metadata.isVideo ? "video" : "image",
-          caption: data.metadata.caption,
-          username: data.author.username,
+          type: data.isVideo ? "video" : "image",
+          caption: data.caption,
+          username: data.username,
           url: data.url,
         },
       };
@@ -270,8 +258,8 @@ const instagram = {
           status: true,
           result: {
             type: "image",
-            caption: data.metadata.caption,
-            username: data.author.username,
+            caption: data.caption,
+            username: data.username,
             url: data.url,
           },
         };
