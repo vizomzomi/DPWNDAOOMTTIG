@@ -88,6 +88,11 @@ function extractMetaData(html) {
   };
 }
 
+function formatCustomDownloadUrl(rawUrl, filename) {
+  if (!rawUrl) return null;
+  return `/api/download?url=${encodeURIComponent(rawUrl)}&filename=${encodeURIComponent(filename)}`;
+}
+
 function buildVideoResult(raw) {
   const versions = raw.video_versions || [];
   const user = raw.user || {};
@@ -101,7 +106,7 @@ function buildVideoResult(raw) {
       type: "video",
       caption,
       username: user.username || "N/A",
-      url: bestVideo,
+      url: formatCustomDownloadUrl(bestVideo, "instagram_video.mp4"),
     },
   };
 }
@@ -115,13 +120,14 @@ function buildSlidesResult(raw) {
   if (!items.length) {
     const bestImg = raw.image_versions2?.candidates?.[0]?.url || raw.display_uri || "";
     const bestVid = raw.video_versions?.[0]?.url || "";
+    const isVid = !!bestVid;
     return {
       status: true,
       result: {
-        type: bestVid ? "video" : "image",
+        type: isVid ? "video" : "image",
         caption,
         username: user.username || "N/A",
-        url: bestVid || bestImg,
+        url: formatCustomDownloadUrl(isVid ? bestVid : bestImg, isVid ? "instagram_video.mp4" : "instagram_foto.jpg"),
       },
     };
   }
@@ -129,14 +135,15 @@ function buildSlidesResult(raw) {
   const firstItem = items[0];
   const bestVid = firstItem.video_versions?.[0]?.url;
   const bestImg = firstItem.image_versions2?.candidates?.[0]?.url || firstItem.display_uri;
+  const isVid = !!bestVid;
 
   return {
     status: true,
     result: {
-      type: bestVid ? "video" : "image",
+      type: isVid ? "video" : "image",
       caption,
       username: user.username || "N/A",
-      url: bestVid || bestImg,
+      url: formatCustomDownloadUrl(isVid ? bestVid : bestImg, isVid ? "instagram_video.mp4" : "instagram_foto.jpg"),
     },
   };
 }
@@ -222,7 +229,7 @@ const instagram = {
           type: data.isVideo ? "video" : "image",
           caption: data.caption,
           username: data.username,
-          url: data.url,
+          url: formatCustomDownloadUrl(data.url, data.isVideo ? "instagram_video.mp4" : "instagram_foto.jpg"),
         },
       };
     } catch (error) {
@@ -260,7 +267,7 @@ const instagram = {
             type: "image",
             caption: data.caption,
             username: data.username,
-            url: data.url,
+            url: formatCustomDownloadUrl(data.url, "instagram_foto.jpg"),
           },
         };
       }
@@ -308,7 +315,7 @@ async function tiktokio(url) {
   const images = [];
   $(".image-item").each((i, el) => {
     const link = cleanUrl($(el).find("a").attr("href"));
-    if (link) images.push(link);
+    if (link) images.push(formatCustomDownloadUrl(link, `tiktok_foto_${i+1}.jpg`));
   });
 
   const links = {};
@@ -322,6 +329,7 @@ async function tiktokio(url) {
   });
 
   const isImage = images.length > 0;
+  const rawVideoUrl = links.nowm_hd || links.nowm || null;
 
   return {
     status: true,
@@ -329,9 +337,9 @@ async function tiktokio(url) {
       title,
       type: isImage ? "image" : "video",
       cover: cleanUrl(cover),
-      url: isImage ? null : (links.nowm_hd || links.nowm || null),
+      url: isImage ? null : formatCustomDownloadUrl(rawVideoUrl, "tiktok_video.mp4"),
       images: isImage ? images : null,
-      audio: links.mp3 || null,
+      audio: formatCustomDownloadUrl(links.mp3, "tiktok_audio.mp3"),
     },
   };
 }
