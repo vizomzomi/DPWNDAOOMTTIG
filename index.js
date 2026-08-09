@@ -32,33 +32,16 @@ function extractEmbedData(html) {
   if (!item) return null;
   const user = item.owner || {};
   const caption = item.edge_media_to_caption?.edges?.[0]?.node?.text || item.caption || "";
-  const thumbnails = (item.display_resources || []).map(r => ({ url: r.src || "", width: r.config_width || 0, height: r.config_height || 0 }));
   return {
     metadata: {
-      id: item.id || "",
       code: item.shortcode || "",
       caption,
-      createTime: item.taken_at ? new Date(item.taken_at * 1000).toLocaleString() : "",
-      type: item.__typename || "",
       isVideo: !!item.is_video,
-      videoViewCount: item.video_view_count || 0,
-      likeCount: item.edge_liked_by?.count || 0,
-      commentCount: item.edge_media_to_comment?.count || 0,
     },
     author: {
-      id: user.id || "",
       username: user.username || "N/A",
-      fullName: user.full_name || "",
-      profilePic: user.profile_pic_url || "",
-      verified: !!user.is_verified,
-      followerCount: user.edge_followed_by?.count || 0,
     },
-    media: {
-      thumbnail: item.display_url || "",
-      thumbnails,
-      videoUrl: item.video_url || "",
-      videoResolution: item.video_url ? getResolution(item.video_url) : "",
-    },
+    url: item.video_url || item.display_url || "",
   };
 }
 
@@ -84,29 +67,6 @@ function extractSlideData(html) {
   return xig.if_not_gated_logged_out || xig;
 }
 
-function uniqueByUrl(arr) {
-  const seen = new Set();
-  return arr.filter(v => {
-    const k = v.url;
-    return seen.has(k) ? false : seen.add(k);
-  });
-}
-
-function getResolution(url) {
-  const m = url.match(/stp=.*?[ps](\d+)x(\d+)/);
-  if (m) return `${m[1]}x${m[2]}`;
-  const efg = url.match(/[?&]efg=([A-Za-z0-9_-]+)/);
-  if (efg) {
-    try {
-      const json = JSON.parse(Buffer.from(efg[1], "base64url").toString());
-      const tag = json.vencode_tag || json.encode_tag || "";
-      const rm = tag.match(/\.(\d{3,4})p?[._]/);
-      if (rm) return `${rm[1]}x${rm[1]}`;
-    } catch {}
-  }
-  return "";
-}
-
 function extractMetaData(html) {
   const getMeta = (prop) => {
     const reg = new RegExp(`<meta[^>]+property=["']${prop}["'][^>]+content=["]([^"]+)["]`);
@@ -118,9 +78,9 @@ function extractMetaData(html) {
   const desc = getMeta("og:description");
   const usernameMatch = html.match(/instagram\.com\/([^\/\s"']+)\/p\//);
   const username = usernameMatch ? usernameMatch[1] : "N/A";
+  let caption = desc;
   const likeMatch = desc.match(/([\d,.]+)\s+likes/);
   const commentMatch = desc.match(/([\d,.]+)\s+comments/);
-  let caption = desc;
   if (likeMatch || commentMatch) {
     const prefix = `${likeMatch?.[1] || "0"} likes, ${commentMatch?.[1] || "0"} comments - `;
     caption = desc.replace(prefix, "").trim();
@@ -129,36 +89,10 @@ function extractMetaData(html) {
     metadata: {
       code: getMeta("og:url").match(/\/([a-zA-Z0-9_-]+)\/?$/)?.[1] || "",
       caption,
-      type: "GraphImage",
       isVideo: false,
-      likeCount: likeMatch ? parseInt(likeMatch[1].replace(/,/g, "")) : 0,
-      commentCount: commentMatch ? parseInt(commentMatch[1].replace(/,/g, "")) : 0,
     },
     author: { username },
-    media: {
-      thumbnail: imageUrl,
-      thumbnails: [{ url: imageUrl, width: 0, height: 0 }],
-      videoUrl: "",
-    },
-  };
-}
-
-function buildFallbackResult(data) {
-  return {
-    status: true,
-    result: {
-      metadata: data.metadata,
-      author: data.author,
-      media: {
-        total_slides: 1,
-        slides: [{
-          slide_id: data.metadata.code,
-          index: 1,
-          images: data.media.thumbnails.length > 0 ? data.media.thumbnails.map(t => ({ url: t.url, resolution: getResolution(t.url) })) : data.media.thumbnail ? [{ url: data.media.thumbnail, resolution: "" }] : [],
-          videos: data.media.videoUrl ? [{ url: data.media.videoUrl, type: "video/mp4" }] : [],
-        }],
-      },
-    },
+    url: imageUrl,
   };
 }
 
@@ -167,38 +101,16 @@ function buildVideoResult(raw, shortcode) {
   const user = raw.user || {};
   const captionObj = raw.caption || {};
   const caption = captionObj.text || raw.accessibility_caption || "";
-  const thumbnails = (raw.image_versions2?.candidates || []).map(c => {
-    const res = getResolution(c.url);
-    const dims = res ? res.split("x") : [0, 0];
-    return { url: c.url, width: +dims[0], height: +dims[1] };
-  });
+  const bestVideo = versions[0]?.url || raw.video_url || "";
+
   return {
     status: true,
     result: {
-      metadata: {
-        id: raw.pk || "",
-        code: raw.code || shortcode,
-        caption,
-        createTime: raw.taken_at ? new Date(raw.taken_at * 1000).toLocaleString() : "",
-        type: raw.__typename || "GraphVideo",
-        isVideo: true,
-        videoViewCount: raw.video_view_count || raw.play_count || 0,
-        likeCount: raw.like_count || 0,
-        commentCount: raw.comment_count || 0,
-      },
-      author: {
-        id: user.pk || user.id || "",
-        username: user.username || "N/A",
-        fullName: user.full_name || "",
-        profilePic: user.profile_pic_url || "",
-        verified: !!user.is_verified,
-        followerCount: user.follower_count || user.edge_followed_by?.count || 0,
-      },
-      media: {
-        thumbnail: raw.display_url || raw.display_uri || "",
-        thumbnails,
-        videos: uniqueByUrl(versions).map(v => ({ url: v.url, type: "video/mp4", resolution: getResolution(v.url) })),
-      },
+      type: "video",
+      caption,
+      username: user.username || "N/A",
+      url: bestVideo,
+      thumbnail: raw.display_url || raw.display_uri || "",
     },
   };
 }
@@ -208,61 +120,35 @@ function buildSlidesResult(raw) {
   const captionObj = raw.caption || {};
   const caption = captionObj.text || raw.accessibility_caption || "";
   const items = raw.carousel_media || [];
+
   if (!items.length) {
-    const hi = raw.image_versions2?.candidates || [];
+    const bestImg = raw.image_versions2?.candidates?.[0]?.url || raw.display_uri || "";
+    const bestVid = raw.video_versions?.[0]?.url || "";
     return {
       status: true,
       result: {
-        metadata: {
-          code: raw.code || "",
-          caption,
-          type: raw.__typename || "",
-          isVideo: raw.media_type === 2,
-          likeCount: raw.like_count || 0,
-          commentCount: raw.comment_count || 0,
-        },
-        author: { username: raw.user?.username || "N/A" },
-        media: {
-          total_slides: 1,
-          slides: [{
-            slide_id: raw.code || "",
-            index: 1,
-            images: hi.length ? hi.map(c => ({ url: c.url, resolution: getResolution(c.url) })) : raw.display_uri ? [{ url: raw.display_uri, resolution: "" }] : [],
-            videos: raw.video_versions?.length ? uniqueByUrl(raw.video_versions).map(v => ({ url: v.url, type: "video/mp4", resolution: getResolution(v.url) })) : raw.video_url ? [{ url: raw.video_url, type: "video/mp4", resolution: getResolution(raw.video_url) }] : [],
-          }],
-        },
+        type: bestVid ? "video" : "image",
+        caption,
+        username: user.username || "N/A",
+        url: bestVid || bestImg,
       },
     };
   }
-  const slides = items.map((item, i) => {
-    const iv2 = item.image_versions2?.candidates || [];
-    return {
-      slide_id: item.code || item.pk || "",
-      index: i + 1,
-      images: iv2.length ? iv2.map(c => ({ url: c.url, resolution: getResolution(c.url) })) : item.display_uri ? [{ url: item.display_uri, resolution: "" }] : [],
-      videos: uniqueByUrl(item.video_versions || []).map(v => ({ url: v.url, type: "video/mp4", resolution: getResolution(v.url) })),
-    };
-  });
+
+  const mediaUrls = items.map(item => {
+    const bestVid = item.video_versions?.[0]?.url;
+    const bestImg = item.image_versions2?.candidates?.[0]?.url || item.display_uri;
+    return bestVid || bestImg;
+  }).filter(Boolean);
+
   return {
     status: true,
     result: {
-      metadata: {
-        id: raw.pk || "",
-        code: raw.code || "",
-        caption,
-        createTime: raw.taken_at ? new Date(raw.taken_at * 1000).toLocaleString() : "",
-        type: raw.__typename || "",
-        isVideo: !!raw.is_video,
-        likeCount: raw.like_count || 0,
-        commentCount: raw.comment_count || 0,
-      },
-      author: {
-        username: user.username || "N/A",
-        fullName: user.full_name || "",
-        profilePic: user.profile_pic_url || "",
-        verified: !!user.is_verified,
-      },
-      media: { total_slides: slides.length, slides },
+      type: "carousel",
+      caption,
+      username: user.username || "N/A",
+      media_count: mediaUrls.length,
+      urls: mediaUrls,
     },
   };
 }
@@ -335,17 +221,22 @@ const instagram = {
       }
       if (raw) {
         const vidData = buildVideoResult(raw, shortcode);
-        if (vidData.result.media.videos && vidData.result.media.videos.length) return vidData;
+        if (vidData.result.url) return vidData;
       }
       const embedRes = await jar.fetch(`https://www.instagram.com/${path}/${shortcode}/embed/captioned/`, { ua });
       html = await embedRes.text();
       const data = extractEmbedData(html);
       if (!data) throw new Error("Data video tidak ditemukan.");
-      if (!data.media.videoUrl) throw new Error("Post ini tidak memiliki video (bukan Reels).");
-      data.media.videos = [{ url: data.media.videoUrl, type: "video/mp4", resolution: getResolution(data.media.videoUrl) }];
-      delete data.media.videoUrl;
-      delete data.media.videoResolution;
-      return { status: true, result: data };
+      if (!data.url) throw new Error("Post ini tidak memiliki media video.");
+      return {
+        status: true,
+        result: {
+          type: data.metadata.isVideo ? "video" : "image",
+          caption: data.metadata.caption,
+          username: data.author.username,
+          url: data.url,
+        },
+      };
     } catch (error) {
       return { status: false, error: error.message };
     }
@@ -375,7 +266,15 @@ const instagram = {
           data = extractMetaData(html);
         }
         if (!data) throw new Error("Data slide tidak ditemukan.");
-        return buildFallbackResult(data);
+        return {
+          status: true,
+          result: {
+            type: "image",
+            caption: data.metadata.caption,
+            username: data.author.username,
+            url: data.url,
+          },
+        };
       }
       return buildSlidesResult(raw);
     } catch (error) {
@@ -463,7 +362,7 @@ app.get("/api/instagram", async (req, res) => {
 
   try {
     let data = await instagram.video(url);
-    if (!data.status) {
+    if (!data.status || !data.result?.url) {
       data = await instagram.slide(url);
     }
 
