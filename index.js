@@ -8,6 +8,51 @@ app.set("json spaces", 2);
 
 const PATH_REGEX = /instagram\.com\/(p|reel|reels)\/([a-zA-Z0-9_-]+)/;
 
+function toBase64Url(str) {
+  return Buffer.from(str, "utf-8")
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
+}
+
+function fromBase64Url(str) {
+  let s = String(str).replace(/-/g, "+").replace(/_/g, "/");
+  while (s.length % 4) s += "=";
+  return Buffer.from(s, "base64").toString("utf-8");
+}
+
+function sanitizeFilename(name) {
+  if (!name) return "";
+  return name
+    .replace(/[\/\\?%*:|"<>\r\n]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 80);
+}
+
+function extFor(type) {
+  const map = { video: "mp4", image: "jpg", audio: "mp3" };
+  return map[type] || "bin";
+}
+
+function guessFilename(type, titleHint) {
+  const ext = extFor(type);
+  const clean = sanitizeFilename(titleHint);
+  const base = clean ? `danzclean_${clean}` : `danzclean_${type || "file"}`;
+  return `${base}.${ext}`;
+}
+
+// Wraps a real media URL into our own /api/dl link so the user never sees the original host,
+// and gives the file a real name (from the video title / caption) instead of a generic one.
+function buildProxyUrl(req, originalUrl, type, titleHint) {
+  if (!originalUrl) return null;
+  const base = `${req.protocol}://${req.get("host")}`;
+  const token = toBase64Url(originalUrl);
+  const params = new URLSearchParams({ u: token, n: guessFilename(type, titleHint) });
+  return `${base}/api/dl?${params.toString()}`;
+}
+
 function extractShortcode(url) {
   if (!url) return null;
   const match = url.match(PATH_REGEX);
@@ -330,6 +375,17 @@ app.get("/api/tiktok", async (req, res) => {
 
   try {
     const data = await tiktokio(url);
+
+    if (data.status && data.result) {
+      const r = data.result;
+      if (r.url) r.url = buildProxyUrl(req, r.url, r.type, r.title);
+      if (r.cover) r.cover = buildProxyUrl(req, r.cover, "image", r.title);
+      if (r.audio) r.audio = buildProxyUrl(req, r.audio, "audio", r.title);
+      if (Array.isArray(r.images)) {
+        r.images = r.images.map((img) => buildProxyUrl(req, img, "image", r.title));
+      }
+    }
+
     return res.setHeader("Content-Type", "application/json").send(
       JSON.stringify(data, null, 2)
     );
@@ -360,6 +416,10 @@ app.get("/api/instagram", async (req, res) => {
       );
     }
 
+    if (data.result?.url) {
+      data.result.url = buildProxyUrl(req, data.result.url, data.result.type, data.result.caption);
+    }
+
     return res.setHeader("Content-Type", "application/json").send(
       JSON.stringify(data, null, 2)
     );
@@ -367,6 +427,62 @@ app.get("/api/instagram", async (req, res) => {
     return res.status(500).setHeader("Content-Type", "application/json").send(
       JSON.stringify({ status: false, message: "Gagal memproses Instagram.", error: error.message }, null, 2)
     );
+  }
+});
+
+// Streams the file through our server so we control the filename (Content-Disposition).
+// Falls back to a 302 redirect if the upstream fetch fails, so a download link never dies.
+app.get("/api/dl", async (req, res) => {
+  const { u, n } = req.query;
+  if (!u) {
+    return res.status(400).setHeader("Content-Type", "application/json").send(
+      JSON.stringify({ status: false, message: "Parameter 'u' wajib diisi." }, null, 2)
+    );
+  }
+
+  let originalUrl;
+  try {
+    originalUrl = fromBase64Url(u);
+    new URL(originalUrl);
+  } catch {
+    return res.status(400).setHeader("Content-Type", "application/json").send(
+      JSON.stringify({ status: false, message: "Token tidak valid." }, null, 2)
+    );
+  }
+
+  let referer;
+  if (/instagram|cdninstagram|fbcdn/i.test(originalUrl)) referer = "https://www.instagram.com/";
+  else if (/tiktok/i.test(originalUrl)) referer = "https://www.tiktok.com/";
+
+  const filename = n || originalUrl.split("/").pop().split("?")[0] || "file";
+
+  try {
+    const upstream = await axios.get(originalUrl, {
+      responseType: "stream",
+      maxRedirects: 5,
+      timeout: 30000,
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Mobile Safari/537.36",
+        ...(referer ? { Referer: referer } : {}),
+      },
+      validateStatus: (s) => s >= 200 && s < 400,
+    });
+
+    res.setHeader("Content-Type", upstream.headers["content-type"] || "application/octet-stream");
+    if (upstream.headers["content-length"]) {
+      res.setHeader("Content-Length", upstream.headers["content-length"]);
+    }
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+
+    upstream.data.pipe(res);
+    upstream.data.on("error", () => {
+      if (!res.headersSent) res.redirect(302, originalUrl);
+      else res.end();
+    });
+  } catch {
+    // Streaming failed (timeout, size limit, upstream block, etc) — fall back to a plain redirect
+    // so the user can still get the file, just without our custom filename.
+    return res.redirect(302, originalUrl);
   }
 });
 
