@@ -56,41 +56,36 @@ async function tiktokio(url) {
 }
 
 async function downloadInstagram(url) {
-  const { data } = await axios.post(
-    "https://worker.sf-tools.com/savefrom.php",
-    new URLSearchParams({ sf_url: url, sf_submit: "", new: "2", lang: "id", app: "", country: "id", os: "Android", browser: "Chrome" }),
-    {
-      headers: {
-        "content-type": "application/x-www-form-urlencoded",
-        "origin": "https://id.savefrom.net",
-        "referer": "https://id.savefrom.net/",
-        "user-agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Mobile Safari/537.36"
-      }
-    }
-  );
+  const form = new URLSearchParams();
+  form.append("q", url);
+  form.append("vt", "home");
 
-  const jsonString = typeof data === "string" ? data : JSON.stringify(data);
-  const match = jsonString.match(/sd\.show\((.*?)\);/s);
+  const { data } = await axios.post("https://yt5s.io/api/ajaxSearch", form, {
+    headers: {
+      "Accept": "application/json, text/javascript, */*; q=0.01",
+      "X-Requested-With": "XMLHttpRequest",
+      "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      "Origin": "https://yt5s.io",
+      "Referer": "https://yt5s.io/en29/instagram-downloader"
+    },
+  });
 
-  if (!match) throw new Error("Gagal mengekstrak data dari Instagram.");
+  if (data.status !== "ok" || !data.data) {
+    throw new Error("Gagal mengambil data Instagram atau IP Vercel diblokir.");
+  }
 
-  const parseData = JSON.parse(match[1]);
-  if (!parseData || !parseData.url) throw new Error("Media Instagram tidak ditemukan.");
+  const $ = cheerio.load(data.data);
+  const video = $('a[title="Download Video"]').attr("href");
+  const image = $("img").attr("src");
 
-  const mediaUrl = parseData.url[0]?.url;
-  if (!mediaUrl) throw new Error("URL media tidak valid.");
+  if (video) {
+    return { status: true, result: { type: "video", url: video } };
+  } else if (image) {
+    return { status: true, result: { type: "image", url: image } };
+  }
 
-  const isVideo = parseData.meta?.duration || mediaUrl.includes(".mp4");
-
-  return {
-    status: true,
-    result: {
-      title: parseData.meta?.title || "Instagram Media",
-      type: isVideo ? "video" : "image",
-      url: mediaUrl,
-      thumbnail: parseData.thumb || null
-    }
-  };
+  throw new Error("Media Instagram tidak ditemukan.");
 }
 
 app.get("/api/tiktok", async (req, res) => {
