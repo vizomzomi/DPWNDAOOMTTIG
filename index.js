@@ -60,27 +60,51 @@ async function downloadInstagram(url) {
   form.append("q", url);
   form.append("vt", "home");
 
-  const { data } = await axios.post("https://yt5s.io/api/ajaxSearch", form, {
+  const { data } = await axios.post("https://snapinsta.app/action2.php", form, {
     headers: {
-      "Accept": "application/json",
-      "X-Requested-With": "XMLHttpRequest",
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
+      "accept": "*/*",
+      "content-type": "application/x-www-form-urlencoded; charset=UTF-8",
+      "origin": "https://snapinsta.app",
+      "referer": "https://snapinsta.app/",
+      "user-agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Mobile Safari/537.36",
+      "x-requested-with": "XMLHttpRequest"
+    }
   });
 
-  if (data.status !== "ok") throw new Error("Gagal mengambil data Instagram.");
+  if (!data) throw new Error("Gagal mengambil respon dari Instagram.");
 
-  const $ = cheerio.load(data.data);
-  const video = $('a[title="Download Video"]').attr("href");
-  const image = $("img").attr("src");
+  const htmlContent = typeof data === "string" ? data : (data.data || "");
+  if (!htmlContent) throw new Error("Format respon Instagram tidak valid.");
 
-  if (video) {
-    return { status: true, result: { type: "video", url: video } };
-  } else if (image) {
-    return { status: true, result: { type: "image", url: image } };
+  const $ = cheerio.load(htmlContent);
+  const mediaList = [];
+
+  $("a.download-items__btn").each((i, el) => {
+    const link = $(el).attr("href");
+    if (link) mediaList.push(link);
+  });
+
+  if (!mediaList.length) {
+    $("a").each((i, el) => {
+      const href = $(el).attr("href");
+      if (href && (href.includes("dl.snapcdn.app") || href.includes("instagram"))) {
+        mediaList.push(href);
+      }
+    });
   }
 
-  throw new Error("Media Instagram tidak ditemukan.");
+  if (!mediaList.length) throw new Error("Media Instagram tidak ditemukan.");
+
+  const isVideo = mediaList[0].includes("video") || mediaList[0].includes(".mp4");
+
+  return {
+    status: true,
+    result: {
+      type: isVideo ? "video" : "image",
+      url: mediaList[0],
+      all_media: mediaList
+    }
+  };
 }
 
 app.get("/api/tiktok", async (req, res) => {
