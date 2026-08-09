@@ -88,9 +88,10 @@ function extractMetaData(html) {
   };
 }
 
-function formatCustomDownloadUrl(rawUrl, filename) {
+// Function pembuat Custom Link Download Danz
+function createDanzDownloadUrl(rawUrl, filename) {
   if (!rawUrl) return null;
-  return `/api/download?url=${encodeURIComponent(rawUrl)}&filename=${encodeURIComponent(filename)}`;
+  return `/api/danz/download?url=${encodeURIComponent(rawUrl)}&filename=${encodeURIComponent(filename)}`;
 }
 
 function buildVideoResult(raw) {
@@ -106,7 +107,7 @@ function buildVideoResult(raw) {
       type: "video",
       caption,
       username: user.username || "N/A",
-      url: formatCustomDownloadUrl(bestVideo, "instagram_video.mp4"),
+      url: createDanzDownloadUrl(bestVideo, "danz_instagram.mp4"),
     },
   };
 }
@@ -127,7 +128,7 @@ function buildSlidesResult(raw) {
         type: isVid ? "video" : "image",
         caption,
         username: user.username || "N/A",
-        url: formatCustomDownloadUrl(isVid ? bestVid : bestImg, isVid ? "instagram_video.mp4" : "instagram_foto.jpg"),
+        url: createDanzDownloadUrl(isVid ? bestVid : bestImg, isVid ? "danz_instagram.mp4" : "danz_instagram.jpg"),
       },
     };
   }
@@ -143,7 +144,7 @@ function buildSlidesResult(raw) {
       type: isVid ? "video" : "image",
       caption,
       username: user.username || "N/A",
-      url: formatCustomDownloadUrl(isVid ? bestVid : bestImg, isVid ? "instagram_video.mp4" : "instagram_foto.jpg"),
+      url: createDanzDownloadUrl(isVid ? bestVid : bestImg, isVid ? "danz_instagram.mp4" : "danz_instagram.jpg"),
     },
   };
 }
@@ -229,7 +230,7 @@ const instagram = {
           type: data.isVideo ? "video" : "image",
           caption: data.caption,
           username: data.username,
-          url: formatCustomDownloadUrl(data.url, data.isVideo ? "instagram_video.mp4" : "instagram_foto.jpg"),
+          url: createDanzDownloadUrl(data.url, data.isVideo ? "danz_instagram.mp4" : "danz_instagram.jpg"),
         },
       };
     } catch (error) {
@@ -267,7 +268,7 @@ const instagram = {
             type: "image",
             caption: data.caption,
             username: data.username,
-            url: formatCustomDownloadUrl(data.url, "instagram_foto.jpg"),
+            url: createDanzDownloadUrl(data.url, "danz_instagram.jpg"),
           },
         };
       }
@@ -315,7 +316,7 @@ async function tiktokio(url) {
   const images = [];
   $(".image-item").each((i, el) => {
     const link = cleanUrl($(el).find("a").attr("href"));
-    if (link) images.push(formatCustomDownloadUrl(link, `tiktok_foto_${i+1}.jpg`));
+    if (link) images.push(createDanzDownloadUrl(link, `danz_foto_${i+1}.jpg`));
   });
 
   const links = {};
@@ -337,14 +338,15 @@ async function tiktokio(url) {
       title,
       type: isImage ? "image" : "video",
       cover: cleanUrl(cover),
-      url: isImage ? null : formatCustomDownloadUrl(rawVideoUrl, "tiktok_video.mp4"),
+      url: isImage ? null : createDanzDownloadUrl(rawVideoUrl, "danz_tiktok.mp4"),
       images: isImage ? images : null,
-      audio: formatCustomDownloadUrl(links.mp3, "tiktok_audio.mp3"),
+      audio: createDanzDownloadUrl(links.mp3, "danz_tiktok.mp3"),
     },
   };
 }
 
-app.get("/api/download", async (req, res) => {
+// CUSTOM DOWNLOAD ENDPOINT PRIBADI
+app.get("/api/danz/download", async (req, res) => {
   const { url, filename } = req.query;
   if (!url) {
     return res.status(400).send("Parameter URL wajib diisi.");
@@ -360,8 +362,9 @@ app.get("/api/download", async (req, res) => {
       },
     });
 
-    const downloadName = filename || "file_download";
+    const downloadName = filename || "danz_download";
 
+    // Header ini yang bikin file langsung terunduh otomatis saat diklik
     res.setHeader("Content-Disposition", `attachment; filename="${downloadName}"`);
     res.setHeader("Content-Type", response.headers["content-type"] || "application/octet-stream");
 
