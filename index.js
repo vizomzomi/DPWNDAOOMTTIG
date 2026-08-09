@@ -292,9 +292,8 @@ async function tiktokio(url) {
 
   const images = [];
   $(".image-item").each((i, el) => {
-    const img = $(el).find("img").attr("src");
     const link = $(el).find("a").attr("href");
-    if (img) images.push({ thumbnail: img, download: link });
+    if (link) images.push(link);
   });
 
   const links = {};
@@ -303,18 +302,19 @@ async function tiktokio(url) {
     const href = $(el).attr("href");
     if (text.includes("without watermark") && !text.includes("hd")) links.nowm = href;
     else if (text.includes("hd")) links.nowm_hd = href;
-    else if (text.includes("watermark")) links.wm = href;
     else if (text.includes("mp3")) links.mp3 = href;
   });
+
+  const isImage = images.length > 0;
 
   return {
     status: true,
     result: {
       title,
-      type: images.length ? "image" : "video",
+      type: isImage ? "image" : "video",
       cover,
-      images,
-      video: images.length ? null : links,
+      url: isImage ? null : (links.nowm_hd || links.nowm || null),
+      images: isImage ? images : null,
       audio: links.mp3 || null,
     },
   };
