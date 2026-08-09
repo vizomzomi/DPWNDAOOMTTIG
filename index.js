@@ -287,31 +287,38 @@ async function tiktokio(url) {
   );
 
   const $ = cheerio.load(res.data);
-  const title = $(".video-info h3").first().text().trim();
+
+  let title = $(".video-info h3").first().text().trim() ||
+              $(".video-data h3").first().text().trim() ||
+              $(".video-info .title").first().text().trim() ||
+              $(".video-info p").first().text().trim() ||
+              "TikTok Media";
+
   const cover = $(".video-info img").first().attr("src") || null;
+
+  const cleanUrl = (rawUrl) => {
+    if (!rawUrl) return null;
+    if (rawUrl.includes("corsproxy.io/?")) {
+      const split = rawUrl.split("corsproxy.io/?");
+      return decodeURIComponent(split[1] || split[0]);
+    }
+    return rawUrl;
+  };
 
   const images = [];
   $(".image-item").each((i, el) => {
-    let link = $(el).find("a").attr("href");
-    if (link && link.includes("corsproxy.io/?")) {
-      link = decodeURIComponent(link.split("corsproxy.io/?")[1] || link);
-    }
+    const link = cleanUrl($(el).find("a").attr("href"));
     if (link) images.push(link);
   });
 
   const links = {};
   $(".download-links a").each((i, el) => {
     const text = $(el).text().toLowerCase();
-    let href = $(el).attr("href");
-    
-    // Hapus proxy corsproxy.io jika menempel pada URL
-    if (href && href.includes("corsproxy.io/?")) {
-      href = decodeURIComponent(href.split("corsproxy.io/?")[1] || href);
-    }
+    const href = cleanUrl($(el).attr("href"));
 
     if (text.includes("without watermark") && !text.includes("hd")) links.nowm = href;
     else if (text.includes("hd")) links.nowm_hd = href;
-    else if (text.includes("mp3")) links.mp3 = href;
+    else if (text.includes("mp3") || text.includes("audio")) links.mp3 = href;
   });
 
   const isImage = images.length > 0;
@@ -321,7 +328,7 @@ async function tiktokio(url) {
     result: {
       title,
       type: isImage ? "image" : "video",
-      cover,
+      cover: cleanUrl(cover),
       url: isImage ? null : (links.nowm_hd || links.nowm || null),
       images: isImage ? images : null,
       audio: links.mp3 || null,
@@ -329,7 +336,6 @@ async function tiktokio(url) {
   };
 }
 
-// ENDPOINT BARU: Download Proxy langsung dari Server Vercel
 app.get("/api/download", async (req, res) => {
   const { url, filename } = req.query;
   if (!url) {
@@ -353,7 +359,6 @@ app.get("/api/download", async (req, res) => {
 
     response.data.pipe(res);
   } catch (error) {
-    console.error("Gagal mendownload media:", error.message);
     res.status(500).send("Gagal mengunduh file media.");
   }
 });
