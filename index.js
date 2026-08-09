@@ -1,10 +1,27 @@
 const express = require("express");
 const axios = require("axios");
 const cheerio = require("cheerio");
+const crypto = require("crypto");
 
 const app = express();
 app.use(express.json());
 app.set("json spaces", 2);
+
+// Database sementara di memori server untuk menyimpan URL asli secara rahasia
+const urlStore = new Map();
+
+// Hapus otomatis URL dari memori setelah 10 menit agar server tidak penuh
+function storeSecretUrl(rawUrl) {
+  if (!rawUrl) return null;
+  const id = crypto.randomBytes(6).toString("hex");
+  urlStore.set(id, rawUrl);
+  
+  setTimeout(() => {
+    urlStore.delete(id);
+  }, 10 * 60 * 1000);
+
+  return id;
+}
 
 const PATH_REGEX = /instagram\.com\/(p|reel|reels)\/([a-zA-Z0-9_-]+)/;
 
@@ -88,18 +105,13 @@ function extractMetaData(html) {
   };
 }
 
-// Function pembuat Custom Link Download Danz
-function createDanzDownloadUrl(rawUrl, filename) {
-  if (!rawUrl) return null;
-  return `/api/danz/download?url=${encodeURIComponent(rawUrl)}&filename=${encodeURIComponent(filename)}`;
-}
-
 function buildVideoResult(raw) {
   const versions = raw.video_versions || [];
   const user = raw.user || {};
   const captionObj = raw.caption || {};
   const caption = captionObj.text || raw.accessibility_caption || "";
   const bestVideo = versions[0]?.url || raw.video_url || "";
+  const secretId = storeSecretUrl(bestVideo);
 
   return {
     status: true,
@@ -107,7 +119,7 @@ function buildVideoResult(raw) {
       type: "video",
       caption,
       username: user.username || "N/A",
-      url: createDanzDownloadUrl(bestVideo, "danz_instagram.mp4"),
+      url: secretId ? `/api/danz/file/${secretId}.mp4` : null,
     },
   };
 }
@@ -122,13 +134,15 @@ function buildSlidesResult(raw) {
     const bestImg = raw.image_versions2?.candidates?.[0]?.url || raw.display_uri || "";
     const bestVid = raw.video_versions?.[0]?.url || "";
     const isVid = !!bestVid;
+    const secretId = storeSecretUrl(isVid ? bestVid : bestImg);
+
     return {
       status: true,
       result: {
         type: isVid ? "video" : "image",
         caption,
         username: user.username || "N/A",
-        url: createDanzDownloadUrl(isVid ? bestVid : bestImg, isVid ? "danz_instagram.mp4" : "danz_instagram.jpg"),
+        url: secretId ? `/api/danz/file/${secretId}.${isVid ? "mp4" : "jpg"}` : null,
       },
     };
   }
@@ -137,6 +151,7 @@ function buildSlidesResult(raw) {
   const bestVid = firstItem.video_versions?.[0]?.url;
   const bestImg = firstItem.image_versions2?.candidates?.[0]?.url || firstItem.display_uri;
   const isVid = !!bestVid;
+  const secretId = storeSecretUrl(isVid ? bestVid : bestImg);
 
   return {
     status: true,
@@ -144,7 +159,7 @@ function buildSlidesResult(raw) {
       type: isVid ? "video" : "image",
       caption,
       username: user.username || "N/A",
-      url: createDanzDownloadUrl(isVid ? bestVid : bestImg, isVid ? "danz_instagram.mp4" : "danz_instagram.jpg"),
+      url: secretId ? `/api/danz/file/${secretId}.${isVid ? "mp4" : "jpg"}` : null,
     },
   };
 }
@@ -224,13 +239,15 @@ const instagram = {
       const data = extractEmbedData(html);
       if (!data) throw new Error("Data video tidak ditemukan.");
       if (!data.url) throw new Error("Post ini tidak memiliki media.");
+      
+      const secretId = storeSecretUrl(data.url);
       return {
         status: true,
         result: {
           type: data.isVideo ? "video" : "image",
           caption: data.caption,
           username: data.username,
-          url: createDanzDownloadUrl(data.url, data.isVideo ? "danz_instagram.mp4" : "danz_instagram.jpg"),
+          url: secretId ? `/api/danz/file/${secretId}.${data.isVideo ? "mp4" : "jpg"}` : null,
         },
       };
     } catch (error) {
@@ -262,13 +279,15 @@ const instagram = {
           data = extractMetaData(html);
         }
         if (!data) throw new Error("Data slide tidak ditemukan.");
+        
+        const secretId = storeSecretUrl(data.url);
         return {
           status: true,
           result: {
             type: "image",
             caption: data.caption,
             username: data.username,
-            url: createDanzDownloadUrl(data.url, "danz_instagram.jpg"),
+            url: secretId ? `/api/danz/file/${secretId}.jpg` : null,
           },
         };
       }
@@ -316,7 +335,10 @@ async function tiktokio(url) {
   const images = [];
   $(".image-item").each((i, el) => {
     const link = cleanUrl($(el).find("a").attr("href"));
-    if (link) images.push(createDanzDownloadUrl(link, `danz_foto_${i+1}.jpg`));
+    if (link) {
+      const secretId = storeSecretUrl(link);
+      images.push(`/api/danz/file/${secretId}.jpg`);
+    }
   });
 
   const links = {};
@@ -332,45 +354,50 @@ async function tiktokio(url) {
   const isImage = images.length > 0;
   const rawVideoUrl = links.nowm_hd || links.nowm || null;
 
+  const videoSecretId = storeSecretUrl(rawVideoUrl);
+  const audioSecretId = storeSecretUrl(links.mp3);
+
   return {
     status: true,
     result: {
       title,
       type: isImage ? "image" : "video",
       cover: cleanUrl(cover),
-      url: isImage ? null : createDanzDownloadUrl(rawVideoUrl, "danz_tiktok.mp4"),
+      url: isImage ? null : (videoSecretId ? `/api/danz/file/${videoSecretId}.mp4` : null),
       images: isImage ? images : null,
-      audio: createDanzDownloadUrl(links.mp3, "danz_tiktok.mp3"),
+      audio: audioSecretId ? `/api/danz/file/${audioSecretId}.mp3` : null,
     },
   };
 }
 
-// CUSTOM DOWNLOAD ENDPOINT PRIBADI
-app.get("/api/danz/download", async (req, res) => {
-  const { url, filename } = req.query;
-  if (!url) {
-    return res.status(400).send("Parameter URL wajib diisi.");
+// ENDPOINT DOWNLOAD BERDASARKAN ID RAHASIA (Link Murni Custom Danz)
+app.get("/api/danz/file/:fileId", async (req, res) => {
+  const fullFileId = req.params.fileId;
+  const secretId = fullFileId.split(".")[0];
+  const extension = fullFileId.split(".")[1] || "mp4";
+
+  const targetUrl = urlStore.get(secretId);
+
+  if (!targetUrl) {
+    return res.status(404).send("File tidak ditemukan atau link sudah kedaluwarsa.");
   }
 
   try {
     const response = await axios({
       method: "get",
-      url: url,
+      url: targetUrl,
       responseType: "stream",
       headers: {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
       },
     });
 
-    const downloadName = filename || "danz_download";
-
-    // Header ini yang bikin file langsung terunduh otomatis saat diklik
-    res.setHeader("Content-Disposition", `attachment; filename="${downloadName}"`);
+    res.setHeader("Content-Disposition", `attachment; filename="danz_media.${extension}"`);
     res.setHeader("Content-Type", response.headers["content-type"] || "application/octet-stream");
 
     response.data.pipe(res);
   } catch (error) {
-    res.status(500).send("Gagal mengunduh file media.");
+    res.status(500).send("Gagal mengambil file media.");
   }
 });
 
