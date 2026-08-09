@@ -31,41 +31,28 @@ function fromBase64Url(str) {
   return Buffer.from(s, "base64").toString("utf-8");
 }
 
-function sanitizeFilename(name) {
-  if (!name) return "";
-  return name
-    .replace(/[\/\\?%*:|"<>\r\n]/g, "")
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, 80);
-}
-
 function extFor(type) {
   const map = { video: "mp4", image: "jpg", audio: "mp3" };
   return map[type] || "bin";
 }
 
-function randomCode(len = 6) {
-  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-  let out = "";
-  for (let i = 0; i < len; i++) out += chars[Math.floor(Math.random() * chars.length)];
-  return out;
+function randomNumber() {
+  return Math.floor(100 + Math.random() * 900); // 3 digit, 100-999
 }
 
-function guessFilename(type, titleHint) {
+function guessFilename(type, platform) {
   const ext = extFor(type);
-  const clean = sanitizeFilename(titleHint);
-  const base = clean ? `danzclean_${clean}` : `danzclean_${type || "file"}`;
-  return `${base}_${randomCode()}.${ext}`;
+  const num = randomNumber();
+  return `danzclean${num}_${platform}.${ext}`;
 }
 
 // Wraps a real media URL into our own /api/dl link so the user never sees the original host,
-// and gives the file a real name (from the video title / caption) instead of a generic one.
-function buildProxyUrl(req, originalUrl, type, titleHint) {
+// and gives the file a clean branded name instead of the origin's.
+function buildProxyUrl(req, originalUrl, type, platform) {
   if (!originalUrl) return null;
   const base = `https://${req.get("host")}`;
   const token = toBase64Url(originalUrl);
-  const params = new URLSearchParams({ u: token, n: guessFilename(type, titleHint) });
+  const params = new URLSearchParams({ u: token, n: guessFilename(type, platform) });
   return `${base}/api/dl?${params.toString()}`;
 }
 
@@ -394,11 +381,11 @@ app.get("/api/tiktok", async (req, res) => {
 
     if (data.status && data.result) {
       const r = data.result;
-      if (r.url) r.url = buildProxyUrl(req, r.url, r.type, r.title);
-      if (r.cover) r.cover = buildProxyUrl(req, r.cover, "image", r.title);
-      if (r.audio) r.audio = buildProxyUrl(req, r.audio, "audio", r.title);
+      if (r.url) r.url = buildProxyUrl(req, r.url, r.type, "tiktok");
+      if (r.cover) r.cover = buildProxyUrl(req, r.cover, "image", "tiktok");
+      if (r.audio) r.audio = buildProxyUrl(req, r.audio, "audio", "tiktok");
       if (Array.isArray(r.images)) {
-        r.images = r.images.map((img) => buildProxyUrl(req, img, "image", r.title));
+        r.images = r.images.map((img) => buildProxyUrl(req, img, "image", "tiktok"));
       }
     }
 
@@ -433,7 +420,7 @@ app.get("/api/instagram", async (req, res) => {
     }
 
     if (data.result?.url) {
-      data.result.url = buildProxyUrl(req, data.result.url, data.result.type, data.result.caption);
+      data.result.url = buildProxyUrl(req, data.result.url, data.result.type, "instagram");
     }
 
     return res.setHeader("Content-Type", "application/json").send(
